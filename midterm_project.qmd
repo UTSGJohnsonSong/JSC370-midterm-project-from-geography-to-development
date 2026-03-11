@@ -1,0 +1,1308 @@
+---
+title: "From Geography to Development"
+subtitle: "A Cross-Country Analysis of Economic Structure and National Income"
+author: "Zekun Song"
+date: "10 March 2026"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: true
+    code-tools: true
+    df-print: paged
+    theme: flatly
+    highlight-style: github
+execute:
+  warning: false
+  message: false
+  cache: false
+---
+
+> **Disclaimer:** This is an observational, cross-sectional analysis at the
+> country level for 2019. All reported relationships are descriptive associations.
+> No causal claims are made anywhere in this report. Institutions, education,
+> colonial history, conflict, and political stability are among the many factors
+> that are not included and likely matter.
+
+**Source code and data:** [github.com/UTSGJohnsonSong/JSC370-midterm-project-from-geography-to-development](https://github.com/UTSGJohnsonSong/JSC370-midterm-project-from-geography-to-development)
+
+---
+
+## Introduction
+
+Why do countries differ so dramatically in wealth, urbanisation, and economic complexity? 
+One influential line of argument holds that geography shapes these outcomes in fundamental 
+ways: countries in temperate climates, with coastlines and navigable waterways, have 
+historically developed more productive agriculture and more complex economies. The logic is 
+intuitive, and there is genuine empirical support for a correlation between latitude and 
+income at the country level.
+
+However, at the same time, it is clear that geography is not the whole factor to influence all 
+aspects of the countries. Singapore lies almost exactly on the equator. Botswana is landlocked 
+and tropical and has still managed rapid economic growth. Many cold-climate countries remain 
+poor. Geography may matter in the background, but differences in institutions, colonial 
+legacies, and government policy seem to explain a large share of what latitude alone cannot.
+
+This project aim to take a focused approach to look at a cross-section of countries in 2019. 
+The analysis asks whether geographic conditions are related to the way economies are organised, 
+for instance, how dependent they are on agriculture, how open they are to trade, and how urbanised 
+their populations are. It then asks whether those structural features are related to differences 
+in income across countries. The idea is that geography might be connected to income partly through 
+these economic structures rather than through a direct effect. If that is true, the apparent 
+relationship between geography and income should weaken once those structure variables are included 
+in the regression. The results should therefore be interpreted as descriptive patterns rather than 
+causal evidence.
+
+**Core Research Question**
+
+> To what extent does geography relate to economic development across countries,
+> and does this relationship run through differences in economic structure?
+
+**Subquestions**
+
+1. Are geographic characteristics associated with economic structure across countries?
+2. Are economic structure variables associated with national income levels?
+3. Does the association between geography and income weaken after controlling for
+   economic structure?
+
+**Conceptual Framework**
+
+| Geography^a^ | Economic Structure^b^ | Development^c^ |
+|:---:|:---:|:---:|
+| Latitude, Landlocked | Agriculture share, Trade share, Urbanisation | GDP per capita |
+
+^a^ Geographic proxies for climate gradient and maritime trade access following
+Gallup, Sachs & Mellinger (1999) and Limão & Venables (2001).
+^b^ Structural transformation indicators following Kuznets (1966) and the
+World Bank Development Indicators framework.
+^c^ GDP per capita as the standard cross-country income measure; see Acemoglu,
+Johnson & Robinson (2001) and Rodrik, Subramanian & Trebbi (2004) for context
+on income determinants.
+
+Geographic variables used here are distance from the equator (a rough proxy
+for climate zone), landlocked status (a proxy for access to maritime trade), and
+a binary tropical indicator. Economic structure is measured using three World Bank
+indicators: agricultural value added as a share of GDP, trade as a share of GDP,
+and the urban population share.
+
+**Hypotheses**
+
+| ID | Hypothesis |
+|----|------------|
+| H1a | Countries farther from the equator are expected to have lower agricultural dependence. |
+| H1b | Countries farther from the equator are expected to have higher urbanisation. |
+| H2 | Landlocked countries are expected to have lower trade openness than coastal countries. |
+| H3 | Trade openness and urbanisation are expected to be positively associated with GDP per capita; agricultural dependence negatively. |
+| H4 | The association between geography and GDP is expected to weaken after adding economic structure variables to the regression. |
+
+---
+
+## Methods
+
+### Data Sources
+
+Two publicly accessible APIs are used in this project. Neither requires an API key.
+
+**REST Countries API** (`https://restcountries.com/v3.1/all`)
+provides country-level geographic metadata including country name, ISO3 code
+(`cca3`), latitude and longitude, world region, subregion, landlocked status,
+and population. This is the source for all geography-side variables.
+
+**World Bank Development Indicators API**
+(`https://api.worldbank.org/v2/country/all/indicator/{code}`)
+provides the annual economic indicators. The five series pulled for 2019 are:
+
+| Indicator Code | Variable | Description |
+|----------------|----------|-------------|
+| NY.GDP.PCAP.CD | `gdp_per_capita` | GDP per capita (current USD) |
+| NE.TRD.GNFS.ZS | `trade_share` | Trade (% of GDP) |
+| SP.URB.TOTL.IN.ZS | `urbanization` | Urban population (% of total) |
+| NV.AGR.TOTL.ZS | `agriculture_share` | Agriculture, forestry, fishing (% of GDP) |
+| SP.POP.TOTL | `population` | Population total |
+
+2019 was chosen as the anchor year because it is the last full year before the
+pandemic, has broad World Bank coverage relative to more recent years, and avoids
+the large economic disruptions of 2020 or later that would complicate a cross-sectional
+interpretation.
+
+### Data Acquisition
+
+All data are pulled programmatically at runtime using the `requests` library.
+The two sources are then merged using ISO3 three-letter country codes, which
+are available in both and serve as a reliable country identifier.
+
+One practical issue on the World Bank side is that the API returns regional
+aggregates and income-group totals alongside actual country entries, and many of
+these carry three-letter codes that look like regular ISO3 codes. For example,
+`HIC` is the high-income group, `WLD` is the world total, and `EAS` is East Asia
+& Pacific. Filtering on code length alone is not enough to exclude these — the
+same problem came up in HW2, where a `clean_wb_data()` function handled it using
+a curated exclusion list sourced from the World Bank's own `/region`,
+`/incomelevel`, and `/lendingtype` endpoints. The same comprehensive list is
+adopted here: 44 regional codes, 7 income-level codes, several lending-type
+codes, and 6 IDA/IBRD grouping codes are all excluded, in addition to a regex
+check requiring three uppercase ASCII letters.
+
+### Cleaning and Sample Construction
+
+Once both sources are pulled, the following cleaning steps are applied before
+the analytic sample is finalised:
+
+1. REST Countries entries with non-standard ISO3 codes (length not equal to 3) are dropped.
+2. World Bank entries matching the aggregate-code list or failing the `[A-Z]{3}` format check are excluded.
+3. The two sources are merged on ISO3 using an inner join (keeping only countries present in both).
+4. Rows missing `latitude` are dropped, and any duplicate ISO3 entries are removed.
+5. All analytic columns are coerced to numeric; values that cannot be parsed become `NaN`.
+6. A set of plausibility checks is run to flag any out-of-range values.
+7. Missing values across the five core variables are tabulated before the final filter.
+8. Only complete cases on the five core variables are kept for the analytic sample:
+   `latitude`, `gdp_per_capita`, `trade_share`, `urbanization`, `agriculture_share`.
+
+**Plausibility bounds:**
+
+| Variable | Expected range |
+|----------|----------------|
+| `latitude` | [−90, 90] |
+| `gdp_per_capita` | > 0 |
+| `trade_share` | ≥ 0 |
+| `urbanization` | [0, 100] |
+| `agriculture_share` | [0, 100] |
+
+### Feature Engineering
+
+| Derived variable | Definition |
+|-----------------|------------|
+| `dist_equator` | `abs(latitude)` — distance from equator in degrees |
+| `tropical` | 1 if `abs(latitude) < 23.5`, else 0 |
+| `log_gdp` | `log(gdp_per_capita)` — natural log of GDP per capita |
+| `log_population` | `log(population)` — natural log of population |
+| `gdp_tercile` | Quantile-based income tercile (Low / Medium / High), used for visualisation only |
+
+**Population source:** Population figures are taken from the World Bank
+(`SP.POP.TOTL`, 2019) where available. For territories that have a REST Countries
+entry but no World Bank population figure, the REST Countries population field is
+used as a fallback.
+
+### Analytical Strategy
+
+The analysis moves through four main steps: checking the data structure and
+missingness, summarising the variables descriptively, exploring patterns visually,
+and then running formal statistical tests and regression models. For the regression
+part, I estimated four nested OLS models using heteroskedasticity-robust standard errors,
+adding variables in sequence to see how the geography-income relationship changes
+as more controls are included. Crucially, the same complete-case sample is used
+for all four models so that any changes in coefficients reflect the specification,
+not a change in who is in the sample. All regression results should be read as
+partial associations, not causal estimates.
+
+---
+
+## Preliminary Results
+
+```{python}
+#| label: setup
+#| code-fold: false
+
+import os, re, time, warnings
+import numpy as np
+import pandas as pd
+import requests
+import matplotlib.pyplot as plt
+import statsmodels.formula.api as smf
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from scipy import stats
+from IPython.display import display
+
+warnings.filterwarnings("ignore")
+plt.rcParams.update({
+    "figure.dpi": 130,
+    "axes.spines.top":   False,
+    "axes.spines.right": False,
+    "font.size": 10,
+    "axes.titlesize": 10,
+    "axes.labelsize": 9,
+})
+pd.set_option("display.float_format", "{:.3f}".format)
+
+YEAR    = 2019
+
+REGION_COLORS = {
+    "Africa":   "#E69F00",
+    "Americas": "#56B4E9",
+    "Asia":     "#009E73",
+    "Europe":   "#F0E442",
+    "Oceania":  "#CC79A7",
+}
+
+PRED_LABELS = {
+    "Intercept":         "(Intercept)",
+    "dist_equator":      "Dist. equator (deg)",
+    "landlocked":        "Landlocked",
+    "agriculture_share": "Agriculture share (%)",
+    "trade_share":       "Trade share (%)",
+    "urbanization":      "Urbanisation (%)",
+    "log_population":    "log(Population)",
+}
+
+# Utility functions
+def sig_stars(p):
+    """Return significance stars for a p-value."""
+    if p < 0.001: return "***"
+    if p < 0.01:  return "**"
+    if p < 0.05:  return "*"
+    return ""
+
+def safe_pval(p):
+    """Format p-value for display."""
+    return "< 0.001" if p < 0.001 else f"= {p:.3f}"
+
+def fmt_coef(coef, se, pval):
+    """Format a regression cell as coef***(SE)."""
+    return f"{coef:.3f}{sig_stars(pval)} ({se:.3f})"
+
+def scatter_fit(ax, x_col, y_col, df, xlabel, ylabel, title):
+    """Scatter with OLS trend line and Pearson r annotation, coloured by region."""
+    sub = df[[x_col, y_col, "region"]].dropna()
+    ax.scatter(sub[x_col], sub[y_col],
+               c=sub["region"].map(REGION_COLORS).fillna("#999"),
+               s=28, alpha=0.72, edgecolors="none")
+    xv, yv = sub[x_col].values, sub[y_col].values
+    slope, intercept = np.polyfit(xv, yv, 1)
+    xr = np.linspace(xv.min(), xv.max(), 200)
+    ax.plot(xr, slope * xr + intercept, color="black", lw=2, ls="--", alpha=0.7)
+    r, p = stats.pearsonr(xv, yv)
+    ax.text(0.97, 0.06, f"r = {r:.2f}  (p {safe_pval(p)})",
+            transform=ax.transAxes, ha="right", fontsize=8.5)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+
+print("All Setup Completed.")
+```
+
+```{python}
+#| label: data-acquisition
+
+# World Bank aggregate / group codes — these carry valid 3-letter ISO-style codes
+# but represent regions, income groups, or lending categories, not individual countries.
+# The same exclusion logic was applied in HW2 (see clean_wb_data()).
+# Source: https://api.worldbank.org/v2/region, /incomelevel, /lendingtype
+AGGREGATES = {
+    # Region codes (44) — same list as HW2
+    "AFE", "AFR", "AFW", "ARB", "CAA", "CEA", "CEB", "CEU", "CLA", "CME",
+    "CSA", "CSS", "EAP", "EAR", "EAS", "ECA", "ECS", "EMU", "EUU", "FCS",
+    "HPC", "LAC", "LCN", "LDC", "LTE", "MDE", "MEA", "MNA", "NAC", "NAF",
+    "NRS", "OED", "OSS", "PRE", "PSS", "PST", "RRS", "SAS", "SSA", "SSF",
+    "SST", "SXZ", "WLD", "XZN",
+    # Income level codes (7) — same list as HW2
+    "HIC", "INX", "LIC", "LMC", "LMY", "MIC", "UMC",
+    # Lending type codes — HW2 base (IBD, IDB, IDX, LNX) plus IDA/IBT groupings
+    "IBD", "IBT", "IDA", "IDB", "IDX", "LNX",
+    # IDA & IBRD country groupings (6) — same list as HW2
+    "TEA", "TEC", "TLA", "TMN", "TSA", "TSS",
+}
+_ISO3_RE = re.compile(r"^[A-Z]{3}$")
+
+
+def fetch_rest_countries():
+    """Pull geographic metadata from REST Countries API."""
+    url = "https://restcountries.com/v3.1/all"
+    try:
+        r = requests.get(url,
+            params={"fields": "name,cca3,latlng,region,subregion,landlocked,population"},
+            timeout=30)
+        r.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching REST Countries: {e}")
+        return pd.DataFrame()
+    rows = []
+    for c in r.json():
+        ll = c.get("latlng", [None, None])
+        rows.append({
+            "iso3":       c.get("cca3", ""),
+            "country":    c.get("name", {}).get("common", ""),
+            "latitude":   ll[0] if ll else None,
+            "longitude":  ll[1] if len(ll) > 1 else None,
+            "region":     c.get("region", ""),
+            "subregion":  c.get("subregion", ""),
+            "landlocked": int(c.get("landlocked", False)),
+            "population": c.get("population"),
+        })
+    return (pd.DataFrame(rows)
+              .query("iso3.str.len() == 3")
+              .reset_index(drop=True))
+
+
+def fetch_wb(indicator, year=YEAR):
+    """Pull one World Bank indicator for all countries in a given year,
+    excluding aggregate/regional codes."""
+    url = f"https://api.worldbank.org/v2/country/all/indicator/{indicator}"
+    try:
+        r = requests.get(url,
+            params={"date": year, "format": "json", "per_page": 300},
+            timeout=30)
+        r.raise_for_status()
+        data = r.json()
+    except requests.exceptions.RequestException as e:
+        print(f"  Error fetching {indicator}: {e}")
+        return pd.DataFrame(columns=["iso3", "value"])
+    if len(data) < 2 or not data[1]:
+        return pd.DataFrame(columns=["iso3", "value"])
+    records = []
+    for e in data[1]:
+        iso = e.get("countryiso3code", "")
+        val = e.get("value")
+        if val is None or not iso:
+            continue
+        if iso in AGGREGATES or not _ISO3_RE.match(iso):
+            continue
+        records.append({"iso3": iso, "value": val})
+    return pd.DataFrame(records)
+
+
+WB_INDICATORS = {
+    "NY.GDP.PCAP.CD":    "gdp_per_capita",
+    "NE.TRD.GNFS.ZS":   "trade_share",
+    "SP.URB.TOTL.IN.ZS": "urbanization",
+    "NV.AGR.TOTL.ZS":   "agriculture_share",
+    "SP.POP.TOTL":       "population_wb",
+}
+
+# First we pull geographic metadata from REST Countries
+print("Fetching REST Countries.", end=" ", flush=True)
+geo_df = fetch_rest_countries()
+n_rest = len(geo_df)
+print(f"done  ({n_rest:,} territories)")
+display(geo_df[["iso3", "country", "region", "latitude", "landlocked"]].head(5))
+
+# Then we loop over each WB indicator and merge them into a single wide frame
+wb_counts = {}
+wb_df = None
+for wb_code, col in WB_INDICATORS.items():
+    tmp = fetch_wb(wb_code).rename(columns={"value": col})
+    wb_counts[col] = len(tmp)
+    wb_df = tmp if wb_df is None else wb_df.merge(tmp, on="iso3", how="outer")
+    print(f"  {col}: {len(tmp):>3} non-null observations ({YEAR})")
+    time.sleep(0.2)
+
+# Prefer World Bank population as we mentioned early, rename to disambiguate before merge
+if "population_wb" in wb_df.columns:
+    geo_df = geo_df.rename(columns={"population": "population_geo"})
+    wb_df  = wb_df.rename(columns={"population_wb": "population"})
+
+display(wb_df.head(5))
+```
+
+```{python}
+#| label: merge-clean
+
+# We merge the two sources on ISO3, then clean in sequence: drop bad rows,
+# reconcile population, coerce types, run plausibility checks, record
+# missingness, apply a complete-case filter, and engineer analysis variables.
+
+# First we inner join on ISO3
+df_merged = geo_df.merge(wb_df, on="iso3", how="inner")
+n_inner = len(df_merged)
+
+# Next we drop rows with no latitude and remove any duplicate ISO3 codes
+df_merged = (df_merged
+             .dropna(subset=["latitude"])
+             .drop_duplicates("iso3")
+             .reset_index(drop=True))
+n_latlon = len(df_merged)
+
+# We prefer the WB population figure; fill gaps from REST Countries where WB is missing
+if "population_geo" in df_merged.columns:
+    df_merged["population"] = df_merged["population"].fillna(df_merged["population_geo"])
+df_merged = df_merged.drop(columns=["population_geo"], errors="ignore")
+
+# Coerce all key columns to numeric, turning any non-parseable values into NaN
+NUM_COLS = ["latitude", "longitude", "population",
+            "gdp_per_capita", "trade_share", "urbanization", "agriculture_share"]
+for c in NUM_COLS:
+    if c in df_merged.columns:
+        df_merged[c] = pd.to_numeric(df_merged[c], errors="coerce")
+
+# Run basic plausibility checks before any filtering
+checks = {
+    "latitude ∈ [−90, 90]":         df_merged["latitude"].between(-90, 90).all(),
+    "gdp_per_capita > 0":           (df_merged["gdp_per_capita"].dropna() > 0).all(),
+    "trade_share ≥ 0":              (df_merged["trade_share"].dropna() >= 0).all(),
+    "urbanization ∈ [0, 100]":      df_merged["urbanization"].dropna().between(0, 100).all(),
+    "agriculture_share ∈ [0, 100]": df_merged["agriculture_share"].dropna().between(0, 100).all(),
+}
+plaus_tbl = pd.DataFrame({
+    "Check":  list(checks.keys()),
+    "Passed": ["Yes" if v else "No" for v in checks.values()],
+})
+
+# Record missingness in each core variable before we apply the complete-case filter
+CORE = ["latitude", "gdp_per_capita", "trade_share", "urbanization", "agriculture_share"]
+CORE_LABELS = {
+    "latitude":          "Latitude",
+    "gdp_per_capita":    "GDP per capita",
+    "trade_share":       "Trade share",
+    "urbanization":      "Urbanisation",
+    "agriculture_share": "Agriculture share",
+}
+miss_pre = (df_merged[CORE].isnull().sum()
+               .rename(CORE_LABELS)
+               .to_frame("n_missing")
+               .assign(pct_missing=lambda x:
+                       (x["n_missing"] / len(df_merged) * 100).round(1))
+               .sort_values("n_missing", ascending=False))
+
+# Keep only rows with complete data on all five core variables
+n_pre_cc = len(df_merged)
+df_an = df_merged.dropna(subset=CORE).reset_index(drop=True).copy()
+n_an  = len(df_an)
+
+# Derive the analysis variables used throughout the paper
+df_an["dist_equator"]   = df_an["latitude"].abs()
+df_an["tropical"]       = (df_an["latitude"].abs() < 23.5).astype(int)
+df_an["log_gdp"]        = np.log(df_an["gdp_per_capita"].clip(lower=1))
+df_an["log_population"] = np.log(df_an["population"].clip(lower=1))
+df_an["gdp_tercile"]    = pd.qcut(df_an["gdp_per_capita"], q=3,
+                                   labels=["Low", "Medium", "High"])
+
+# Build a sample flow table to document how many rows survive each step
+flow_tbl = pd.DataFrame({
+    "Stage": [
+        "REST Countries (after ISO3 filter)",
+        "World Bank: GDP per capita (non-null, 2019)",
+        "After inner join (REST × WB)",
+        "After latitude filter / deduplication",
+        "After complete-case filter (5 core vars)",
+    ],
+    "N": [
+        n_rest,
+        wb_counts.get("gdp_per_capita", "—"),
+        n_inner,
+        n_latlon,
+        n_an,
+    ]
+})
+
+print(f"REST Countries (after ISO3 filter) : {n_rest:,}")
+print(f"After inner join (REST combines with WB)       : {n_inner:,}")
+print(f"After latitude / dedup filter      : {n_latlon:,}")
+print(f"Rows dropped (missing core vars)   : {n_pre_cc - n_an:,}")
+print(f"Final analytic sample              : {n_an:,} countries")
+```
+
+### Dataset Inspection {#sec-inspection}
+
+```{python}
+#| label: inspection
+
+print("=== Sample Flow ===")
+display(flow_tbl)
+
+print("\n=== Pre-filter Missingness (core variables) ===")
+display(miss_pre)
+
+print("\n=== Plausibility Checks ===")
+display(plaus_tbl)
+
+print(f"\nFinal analytic sample: {n_an:,} countries × {df_an.shape[1]} columns")
+```
+
+After cleaning, the analytic sample contains **`{python} n_an` countries**. Most
+of the sample reduction came from missing World Bank indicator values for 2019, which
+particularly GDP per capita and agriculture share, which are not reported for
+a number of small territories and micro-states. The geographic variables from
+REST Countries are fully observed for all entries, so the geography side is not
+the bottleneck. All plausibility checks passed cleanly, with no values outside
+the expected ranges. The final sample includes countries from all five world
+regions, so it covers a reasonably wide range of development contexts, though
+very small states and countries experiencing active conflict at the time are
+somewhat underrepresented because of missing economic data.
+
+### Descriptive Statistics {#sec-desc}
+
+```{python}
+#| label: descriptives
+
+STAT_LABELS = {
+    "dist_equator":      "Distance to equator (deg)",
+    "gdp_per_capita":    "GDP per capita (USD)",
+    "log_gdp":           "log(GDP per capita)",
+    "trade_share":       "Trade (% of GDP)",
+    "urbanization":      "Urbanisation (%)",
+    "agriculture_share": "Agriculture (% of GDP)",
+    "population":        "Population",
+}
+
+cols = [c for c in STAT_LABELS if c in df_an.columns]
+t1 = df_an[cols].describe().T[["count", "mean", "std", "min", "50%", "max"]]
+t1.columns = ["N", "Mean", "SD", "Min", "Median", "Max"]
+t1.index    = [STAT_LABELS[c] for c in t1.index]
+t1 = t1.round(2)
+
+print(f"Table 1. Descriptive Statistics — Analytic Sample (n = {n_an}, 2019)")
+t1
+```
+
+Table 1 provides descriptive statistics for our analytic sample (173 countries in 2019). The countries in the dataset are widely distributed geographically, with the distance to equator (deg) around mean 27 degrees and values ranging from 0 to about 72 degrees. The income levels vary substantially across the sample. GDP per capita ranges from about $450 to over $115,000, with a median of roughly $6,700. This means there is a strongly right-skewed distribution. So we need to use log transformation for the unit GDP per capita, which is more symmetrically distributed.
+
+The structural variables also show considerable variation across countries. Trade openness averages about 90 percent of GDP but ranges from around 23 percent to more than 380 percent, reflecting large differences in economic openness and the presence of very trade-dependent economies. Urbanisation averages about 62 percent of the population, although the values range from roughly 16 percent to fully urbanised societies. Agriculture accounts for a much smaller share of output on average (about 9.5 percent of GDP), but in some countries it still reaches over 40 percent, indicating that many economies in the sample remain heavily agriculture-based.
+
+Population sizes vary dramatically across countries, from fewer than twenty thousand people to more than 1.4 billion, highlighting the large heterogeneity in country scale within the dataset.
+
+### Visual EDA {#sec-eda}
+
+```{python}
+#| label: fig1-gdp-dist
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+
+axes[0].hist(df_an["gdp_per_capita"].dropna(), bins=30,
+             color="#2E6DA4", alpha=0.8, edgecolor="white", lw=0.5)
+axes[0].set_xlabel("GDP per capita (USD)")
+axes[0].set_ylabel("Count")
+axes[0].set_title("a) Raw GDP per capita")
+
+axes[1].hist(df_an["log_gdp"].dropna(), bins=25,
+             color="#D45F3B", alpha=0.8, edgecolor="white", lw=0.5)
+axes[1].set_xlabel("log(GDP per capita)")
+axes[1].set_ylabel("Count")
+axes[1].set_title("b) log(GDP per capita)")
+
+fig.suptitle("Figure 1. Distribution of GDP per Capita (2019)", y=1.01)
+plt.tight_layout()
+plt.show()
+```
+
+*Figure 1. GDP per capita in 2019, shown on the raw scale (left) and log scale (right). The raw distribution is strongly right-skewed, with most countries concentrated at lower income levels and a long tail of wealthier countries. The log transformation produces a much more symmetric distribution and is used throughout the rest of the analysis.*
+
+```{python}
+#| label: fig2-gdp-region
+
+# Group the GDP(log) by world region and store and plot
+sub2    = df_an[["region", "log_gdp"]].dropna()
+regions = sorted(sub2["region"].unique())
+data2   = [sub2.loc[sub2["region"] == r, "log_gdp"].values for r in regions]
+
+fig, ax = plt.subplots(figsize=(9, 5))
+bp = ax.boxplot(data2, patch_artist=True, labels=regions,
+                medianprops={"color": "black", "linewidth": 2},
+                whiskerprops={"linewidth": 1.2},
+                flierprops={"marker": "o", "markersize": 3, "alpha": 0.5})
+for patch, region in zip(bp["boxes"], regions):
+    patch.set_facecolor(REGION_COLORS.get(region, "#999999"))
+    patch.set_alpha(0.75)
+ax.set_ylabel("log(GDP per capita)")
+ax.set_xlabel("World Region")
+ax.set_title("Figure 2. GDP per Capita by World Region (2019)")
+ax.tick_params(axis="x", rotation=20)
+plt.tight_layout()
+plt.show()
+```
+
+*Figure 2. Log GDP per capita by world region, 2019. European countries have the highest median income; African countries have the lowest median. Asia and Oceania seems to both have the widest spread within the group. Boxes show the interquartile range; whiskers extend to 1.5 × IQR*
+
+```{python}
+#| label: fig3-dist-agriculture
+
+fig, ax = plt.subplots(figsize=(8, 5))
+scatter_fit(ax, "dist_equator", "agriculture_share", df_an,
+            "Distance from equator (degrees)",
+            "Agriculture share (% of GDP)",
+            "Distance from Equator vs Agriculture Share (2019)")
+handles = [plt.Line2D([0], [0], marker="o", color="w",
+           markerfacecolor=c, markersize=8, label=r)
+           for r, c in REGION_COLORS.items()]
+ax.legend(handles=handles, fontsize=7.5, loc="lower left",
+          framealpha=0.5, edgecolor="none")
+plt.tight_layout()
+plt.show()
+```
+
+*Figure 3. plots the share of agriculture in GDP against distance from the equator in 2019. There is a negative relationship based on the scatterplot. Which means countries located farther from the equator tend to have smaller agricultural sectors on average. The fitted line slopes downward, and the correlation is moderate (r = −0.39, p < 0.001). It is noticeable that almost all European countries appear both farther from the equator and have relatively low agriculture shares, while many African countries are located closer to the equator and tend to rely more heavily on agriculture. This pattern reveals that geography may be related to differences in economic structure.*
+
+```{python}
+#| label: fig4-dist-urban
+
+fig, ax = plt.subplots(figsize=(8, 5))
+scatter_fit(ax, "dist_equator", "urbanization", df_an,
+            "Distance from equator (degrees)",
+            "Urbanisation (%)",
+            "Distance from Equator vs Urbanisation (2019)")
+handles = [plt.Line2D([0], [0], marker="o", color="w",
+           markerfacecolor=c, markersize=8, label=r)
+           for r, c in REGION_COLORS.items()]
+ax.legend(handles=handles, fontsize=7.5, loc="lower right",
+          framealpha=0.5, edgecolor="none")
+plt.tight_layout()
+plt.show()
+```
+
+*Figure 4. Distance from the equator versus urbanisation rate, 2019. It illustrates countries located farther from the equator tend to have higher urbanisation rates on average. The fitted line slopes upward, and the correlation coefficient is moderate (r = 0.38, p < 0.001). At the same time, the scatter remains fairly wide. Countries at similar latitudes can still have quite different levels of urbanisation, which suggests that geography alone does not determine urban development.*
+
+```{python}
+#| label: fig5-trade-landlocked
+
+ll    = df_an.loc[df_an["landlocked"] == 1, "trade_share"].dropna()
+coast = df_an.loc[df_an["landlocked"] == 0, "trade_share"].dropna()
+
+fig, ax = plt.subplots(figsize=(5.5, 5))
+bp = ax.boxplot([ll, coast], patch_artist=True,
+                labels=[f"Landlocked\n(n={len(ll)})",
+                        f"Coastal\n(n={len(coast)})"],
+                medianprops={"color": "black", "linewidth": 2},
+                flierprops={"marker": "o", "markersize": 3, "alpha": 0.5})
+bp["boxes"][0].set_facecolor("#E69F00"); bp["boxes"][0].set_alpha(0.75)
+bp["boxes"][1].set_facecolor("#56B4E9"); bp["boxes"][1].set_alpha(0.75)
+t_val, p_val = stats.ttest_ind(ll, coast, equal_var=False)
+ax.text(0.5, 0.96,
+        f"Welch t = {t_val:.2f},  p {'< 0.001' if p_val < 0.001 else f'= {p_val:.3f}'}",
+        transform=ax.transAxes, ha="center", va="top", fontsize=9)
+ax.set_ylabel("Trade (% of GDP)")
+ax.set_title("Figure 5. Trade Openness by Landlocked Status (2019)")
+plt.tight_layout()
+plt.show()
+```
+
+*Figure 5. Trade openness by landlocked status in 2019. Landlocked countries appear to have slightly lower trade shares on average, but the distributions of the two groups overlap substantially. A Welch t-test indicates that the difference between landlocked and coastal countries is not statistically significant (t = 0.66, p = 0.515).*
+
+```{python}
+#| label: fig6-8-structure-gdp
+
+structure_specs = [
+    ("trade_share",       "Trade (% of GDP)",      "Figure 6. Trade Share vs log(GDP)"),
+    ("urbanization",      "Urbanisation (%)",       "Figure 7. Urbanisation vs log(GDP)"),
+    ("agriculture_share", "Agriculture (% of GDP)", "Figure 8. Agriculture Share vs log(GDP)"),
+]
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+for ax, (xcol, xlab, title) in zip(axes, structure_specs):
+    scatter_fit(ax, xcol, "log_gdp", df_an, xlab, "log(GDP per capita)", title)
+
+fig.suptitle("Figures 6–8. Economic Structure vs log(GDP per Capita), 2019",
+             y=1.02, fontsize=11)
+plt.tight_layout()
+plt.show()
+```
+
+*Figures 6–8 compare three indicators of economic structure with log GDP per capita in 2019: trade openness, urbanisation, and the share of agriculture in GDP. Taken together, the three plots suggest that countries with more urbanised economies and smaller agricultural sectors tend to have higher income levels. And we can look at them seperately.*
+
+*Figure 6 shows the relationship between trade openness and log GDP per capita. The scatterplot indicates a relatively positive association.  Countries with higher trade shares tend to have higher income levels on average. The fitted line slopes upward and the correlation is moderate (r = 0.41, p < 0.001). At the same time, the points are quite dispersed, especially at early range trade levels, suggesting that trade openness alone does not fully explain cross-country differences in income.*
+
+*Figure 7 plots urbanisation against log GDP per capita. Here the relationship appears much stronger. Countries with more urbanised populations tend to have substantially higher income levels, and the correlation is relatively high (r = 0.72, p < 0.001). The upward trend is clearly visible across the entire range of the data, indicating that urbanisation is strongly associated with higher levels of development.*
+
+*Figure 8 shows the share of agriculture in GDP against log GDP per capita. In contrast to the previous plots, the relationship is strongly negative. Countries where agriculture accounts for a larger share of economic output tend to have lower income levels. The downward-sloping fitted line and the strong negative correlation (r = −0.79, p < 0.001) reflect this pattern.*
+
+```{python}
+#| label: fig9-heatmap
+
+HMAP_VARS = ["dist_equator", "landlocked", "tropical",
+             "agriculture_share", "trade_share", "urbanization",
+             "log_gdp", "log_population"]
+hv       = [c for c in HMAP_VARS if c in df_an.columns]
+corr_mat = df_an[hv].corr()
+
+HMAP_LABELS = {
+    "dist_equator":      "Dist. equator",
+    "landlocked":        "Landlocked",
+    "tropical":          "Tropical",
+    "agriculture_share": "Agric. share",
+    "trade_share":       "Trade share",
+    "urbanization":      "Urbanisation",
+    "log_gdp":           "log(GDP)",
+    "log_population":    "log(Pop.)",
+}
+
+fig, ax = plt.subplots(figsize=(8.5, 7))
+im = ax.imshow(corr_mat.values, vmin=-1, vmax=1, cmap="RdBu_r", aspect="auto")
+plt.colorbar(im, ax=ax, label="Pearson r", shrink=0.85)
+labels = [HMAP_LABELS.get(c, c) for c in hv]
+ax.set_xticks(range(len(hv))); ax.set_xticklabels(labels, rotation=35, ha="right")
+ax.set_yticks(range(len(hv))); ax.set_yticklabels(labels)
+for i in range(len(hv)):
+    for j in range(len(hv)):
+        v = corr_mat.iloc[i, j]
+        ax.text(j, i, f"{v:.2f}", ha="center", va="center",
+                fontsize=7.5, color="white" if abs(v) > 0.55 else "black")
+ax.set_title("Figure 9. Pearson Correlation Matrix — Core Variables (2019)")
+plt.tight_layout()
+plt.show()
+```
+
+*Figure 9. Pearson correlation matrix for all main variables, 2019. Each cell shows the correlation coefficient; the colour scale runs from strong negative to strong positive. Coefficients with absolute value above 0.55 are shown in white text for readability.*
+
+Conclusion for this part: 
+The scatterplots in Figures 3 and 4 illustrate the geographic patterns in economic structure. Countries located farther from the equator generally tend to have smaller agricultural sectors, while urbanisation tends to be higher. However, the relationships are not particularly tight, and there is still considerable variation across countries.
+
+Regional clustering is also visible in both plots. Many African countries appear in the lower-latitude, high-agriculture part of Figure 3, while many European countries are located at higher latitudes with relatively high levels of urbanisation in Figure 4. This clustering suggests that what looks like a latitude effect may partly reflect broader regional differences that are correlated with geography.
+
+Figures 6 to 8 turn to the relationship between economic structure and income. Trade openness and urbanisation both show positive associations with log GDP per capita, while the share of agriculture is negatively related to income. The overall patterns are clearly visible in the plots, although the scatter indicates that these variables alone do not fully explain differences in income across countries.
+
+The heatmap in Figure 9 provides a broader overview of pairwise correlations. Log GDP per capita is most strongly correlated with urbanisation and log population, while agriculture share and landlocked status are moderately negatively correlated with income. The correlations among the three structure variables themselves are relatively modest, suggesting that including them together in the regression models should not create serious multicollinearity concerns.
+
+### Statistical Testing {#sec-tests}
+
+**A. Pearson Correlation Tests**
+
+```{python}
+#| label: pearson-tests
+
+pairs = [
+    ("dist_equator",      "agriculture_share", "Dist. equator",    "Agriculture share"),
+    ("dist_equator",      "urbanization",      "Dist. equator",    "Urbanisation"),
+    ("dist_equator",      "log_gdp",           "Dist. equator",    "log(GDP)"),
+    ("trade_share",       "log_gdp",           "Trade share",      "log(GDP)"),
+    ("urbanization",      "log_gdp",           "Urbanisation",     "log(GDP)"),
+    ("agriculture_share", "log_gdp",           "Agriculture share","log(GDP)"),
+]
+
+corr_rows = []
+for x, y, xl, yl in pairs:
+    sub = df_an[[x, y]].dropna()
+    r, p = stats.pearsonr(sub[x], sub[y])
+    corr_rows.append({
+        "X variable":  xl,
+        "Y variable":  yl,
+        "n":           len(sub),
+        "Pearson r":   round(r, 3),
+        "p-value":     "< 0.001" if p < 0.001 else f"{p:.3f}",
+        "Sig.":        sig_stars(p),
+    })
+
+tbl_corr = pd.DataFrame(corr_rows)
+print("Table 2. Pearson Correlation Tests")
+print("  * p<0.05   ** p<0.01   *** p<0.001\n")
+tbl_corr
+```
+
+**B. Pairwise Correlations among Structure Variables**
+
+```{python}
+#| label: structure-correlations
+
+struct_vars   = ["agriculture_share", "trade_share", "urbanization"]
+struct_labels = {
+    "agriculture_share": "Agriculture share",
+    "trade_share":       "Trade share",
+    "urbanization":      "Urbanisation",
+}
+sub_s    = df_an[struct_vars].dropna()
+n_struct = len(sub_s)
+
+rows_s = []
+for i, x in enumerate(struct_vars):
+    for y in struct_vars[i + 1:]:
+        r, p = stats.pearsonr(sub_s[x], sub_s[y])
+        rows_s.append({
+            "Variable 1": struct_labels[x],
+            "Variable 2": struct_labels[y],
+            "n":          n_struct,
+            "Pearson r":  round(r, 3),
+            "p-value":    "< 0.001" if p < 0.001 else f"{p:.3f}",
+        })
+
+tbl_struct = pd.DataFrame(rows_s)
+print("Table 3. Pairwise Correlations among Structure Variables")
+print("  (supports multicollinearity assessment for regression)\n")
+tbl_struct
+```
+
+```{python}
+#| label: vif-check
+
+X_vif       = sub_s.copy()
+X_vif_const = sm.add_constant(X_vif)
+vif_vals    = [variance_inflation_factor(X_vif_const.values, i + 1)
+               for i in range(len(struct_vars))]
+vif_df = pd.DataFrame({
+    "Variable": [struct_labels[v] for v in struct_vars],
+    "VIF":      [round(v, 2) for v in vif_vals],
+})
+print("Table 4. Variance Inflation Factors — Structure Variables")
+print("  (VIF < 5 is generally considered acceptable)\n")
+vif_df
+```
+
+**C. Welch Two-Sample T-Tests: Landlocked vs Coastal Countries**
+
+```{python}
+#| label: welch-tests
+
+ll_grp    = df_an[df_an["landlocked"] == 1]
+coast_grp = df_an[df_an["landlocked"] == 0]
+
+ttest_rows = []
+for var, lab in [("trade_share", "Trade share"), ("log_gdp", "log(GDP)")]:
+    g1, g2 = ll_grp[var].dropna(), coast_grp[var].dropna()
+    t_val, p_val = stats.ttest_ind(g1, g2, equal_var=False)
+    ttest_rows.append({
+        "Variable":         lab,
+        "Landlocked mean":  round(g1.mean(), 3),
+        "Coastal mean":     round(g2.mean(), 3),
+        "Difference (C−L)": round(g2.mean() - g1.mean(), 3),
+        "n (landlocked)":   len(g1),
+        "n (coastal)":      len(g2),
+        "t (Welch)":        round(t_val, 3),
+        "p-value":          "< 0.001" if p_val < 0.001 else f"{p_val:.3f}",
+        "Sig.":             sig_stars(p_val),
+    })
+
+tbl_ttest = pd.DataFrame(ttest_rows)
+print("Table 5. Welch T-Tests: Landlocked vs Coastal Countries")
+print("  * p<0.05   ** p<0.01   *** p<0.001\n")
+tbl_ttest
+```
+
+The correlation results in Table 2 are broadly consistent with the patterns observed in the scatterplots. Countries located farther from the equator tend to have smaller agricultural sectors and higher levels of urbanisation, and both correlations are statistically significant. The three structure variables are also significantly correlated with log GDP per capita in the expected directions. At the same time, these correlations reflect simple bivariate relationships and may capture broader regional or historical patterns associated with each variable, rather than direct effects on their own.
+
+Before moving to the regression analysis, it is useful to examine how closely the three structure variables relate to one another. Table 3 reports the pairwise correlations among agriculture share, trade share, and urbanisation. The correlations are moderate but not extremely high. Table 4 confirms this using variance inflation factors (VIFs), all of which remain well below commonly used thresholds for concern. Taken together, these results suggest that including all three variables in the same regression model is unlikely to create serious multicollinearity problems.
+
+The Welch t-test results in Table 5 compare landlocked and coastal countries. The results show that landlocked countries have significantly lower income levels on average, with the difference in log GDP per capita being statistically significant. In contrast, the difference in trade share between landlocked and coastal countries is not statistically significant. Although landlocked countries appear to have somewhat different trade patterns in the sample, the distributions overlap substantially. As with the earlier correlations, these comparisons should be interpreted cautiously, since landlocked countries also differ from coastal ones in other respects, including geography and regional context.
+
+
+### Regression Analysis {#sec-regression}
+
+To explore whether the relationship between geography and income changes once economic structure is taken into account, I try to estimate four nested OLS models and added variables sequentially. All models use the same complete-case sample, which means that any changes in the coefficients reflect the inclusion of additional variables rather than differences in the countries included in the sample. Robust standard errors are used to account for potential heteroskedasticity. Figure 10, shown after the coefficient table, illustrates how the two geography coefficients evolve as the model becomes more complex.
+
+```{python}
+#| label: regression
+
+REG_VARS = ["log_gdp", "dist_equator", "landlocked",
+            "agriculture_share", "trade_share", "urbanization", "log_population"]
+reg   = df_an.dropna(subset=REG_VARS).copy()
+n_reg = len(reg)
+
+m1 = smf.ols("log_gdp ~ dist_equator",
+             data=reg).fit(cov_type="HC3")
+m2 = smf.ols("log_gdp ~ dist_equator + landlocked",
+             data=reg).fit(cov_type="HC3")
+m3 = smf.ols(
+    "log_gdp ~ dist_equator + landlocked + agriculture_share + trade_share + urbanization",
+    data=reg).fit(cov_type="HC3")
+m4 = smf.ols(
+    "log_gdp ~ dist_equator + landlocked + agriculture_share + trade_share"
+    " + urbanization + log_population",
+    data=reg).fit(cov_type="HC3")
+
+# Pre-compute inline-referenced values
+m1_dist = round(m1.params["dist_equator"], 3)
+m2_dist = round(m2.params["dist_equator"], 3)
+m3_dist = round(m3.params["dist_equator"], 3)
+m4_dist = round(m4.params["dist_equator"], 3)
+m2_ll   = round(m2.params["landlocked"],   3)
+m3_ll   = round(m3.params["landlocked"],   3)
+m4_ll   = round(m4.params["landlocked"],   3)
+m1_r2   = round(m1.rsquared, 3)
+m2_r2   = round(m2.rsquared, 3)
+m3_r2   = round(m3.rsquared, 3)
+m4_r2   = round(m4.rsquared, 3)
+dist_attn_pct = int(round((1 - m3_dist / m1_dist) * 100)) if m1_dist != 0 else 0
+
+print(f"All four models estimated on the same sample: n = {n_reg:,}\n")
+print("Model fit summary:")
+for nm, m in [("M1", m1), ("M2", m2), ("M3", m3), ("M4", m4)]:
+    print(f"  {nm}: R² = {m.rsquared:.3f},  Adj. R² = {m.rsquared_adj:.3f},  "
+          f"n = {int(m.nobs)}")
+```
+
+```{python}
+#| label: regression-table
+
+ROW_ORDER = ["Intercept", "dist_equator", "landlocked",
+             "agriculture_share", "trade_share", "urbanization", "log_population"]
+
+col_data = {}
+for nm, m in [("M1", m1), ("M2", m2), ("M3", m3), ("M4", m4)]:
+    d = {pred: fmt_coef(m.params[pred], m.bse[pred], m.pvalues[pred])
+         for pred in m.params.index}
+    d["_N"]     = str(int(m.nobs))
+    d["_R2"]    = f"{m.rsquared:.3f}"
+    d["_adjR2"] = f"{m.rsquared_adj:.3f}"
+    col_data[nm] = d
+
+tbl_reg   = pd.DataFrame(col_data).fillna("—")
+ordered   = [p for p in ROW_ORDER if p in tbl_reg.index]
+extra     = [p for p in tbl_reg.index if p not in ROW_ORDER and not p.startswith("_")]
+stat_rows = [r for r in ["_N", "_R2", "_adjR2"] if r in tbl_reg.index]
+tbl_reg   = tbl_reg.loc[ordered + extra + stat_rows]
+
+tbl_reg.index = [
+    PRED_LABELS.get(p, p) if not p.startswith("_")
+    else {"_N": "N", "_R2": "R²", "_adjR2": "Adj. R²"}[p]
+    for p in tbl_reg.index
+]
+tbl_reg.columns.name = None
+tbl_reg.index.name   = "Predictor"
+
+print("Table 6. OLS Regression — Outcome: log(GDP per capita), HC3 Standard Errors")
+print("  Format: coef*** (SE).   * p<0.05   ** p<0.01   *** p<0.001")
+print(f"  All models estimated on the same sample (n = {n_reg}).\n")
+tbl_reg
+```
+
+**Model results:**
+
+M1 (baseline, R² = 0.299).
+The first model regresses log GDP per capita only on distance from the equator. The coefficient on distance from the equator is 0.045 (SE = 0.005, p < 0.001), which means that countries farther from the equator tend to have higher income levels on average in this sample. This is a fairly strong bivariate relationship: geography on its own already explains about 30 percent of the variation in log GDP per capita across the 173 countries. At the same time, this baseline result should be interpreted carefully. Distance from the equator is standing in for many broader differences across countries, so M1 is useful mainly as a starting point rather than as a complete explanation.
+
+M2 (adding landlocked status, R² = 0.394).
+Once landlocked status is added, the model fit improves noticeably, with R² rising from 0.299 to 0.394. The coefficient on distance from the equator increases slightly from 0.045 to 0.048 (SE = 0.004, p < 0.001), while the coefficient on landlocked status is -1.084 (SE = 0.193, p < 0.001). This suggests that, holding latitude constant, landlocked countries are associated with substantially lower income levels. The fact that the latitude coefficient changes very little after landlocked status is introduced suggests that these two geography variables are capturing somewhat different aspects of cross-country variation. Put differently, being farther from the equator and being landlocked do not appear to be telling exactly the same story.
+
+M3 (adding economic structure, R² = 0.762).
+This is the key model in the sequence. Once agriculture share, trade share, and urbanisation are added together, the explanatory power of the model increases sharply: R² rises from 0.394 in M2 to 0.762 in M3. That is a very large jump, and it shows that economic structure is much more closely tied to income differences than geography alone. At the same time, the coefficient on distance from the equator falls from 0.048 in M2 to 0.022 (SE = 0.004, p < 0.001). Relative to the baseline model, that is roughly a 51 percent reduction. The landlocked coefficient also becomes much smaller in absolute value, dropping from -1.084 to -0.425 (SE = 0.153, p < 0.01). This is one of the clearest results in the paper: once differences in economic structure are taken into account, the geography-income relationship becomes much weaker.
+
+The structure variables themselves are also informative. Agriculture share has a coefficient of -0.066 (SE = 0.009, p < 0.001), indicating that countries with larger agricultural sectors tend to have substantially lower income levels. Urbanisation has a coefficient of 0.017 (SE = 0.004, p < 0.001), showing a strong positive association with income. Trade share is positive as well, at 0.003 (SE = 0.001, p < 0.05), although its coefficient is much smaller and less precisely estimated than the other two structure variables. Taken together, these results fit the broader pattern already visible in the descriptive plots: higher-income countries tend to be more urbanised and less dependent on agriculture.
+
+M4 (adding log population, R² = 0.789).
+The final model adds log population as a size control. This increases R² further from 0.762 to 0.789, so country size contributes some additional explanatory power, but it does not alter the main story. The coefficient on distance from the equator remains very similar at 0.023 (SE = 0.004, p < 0.001), and the coefficient on landlocked status is -0.396 (SE = 0.145, p < 0.01). In other words, the weakening of the geography coefficients is not reversed once population is included.
+
+The other coefficients are also fairly stable between M3 and M4. Agriculture share remains strongly negative at -0.066 (SE = 0.008, p < 0.001), and urbanisation remains strongly positive at 0.018 (SE = 0.003, p < 0.001). Trade share, however, becomes smaller and is no longer statistically significant in M4, with a coefficient of 0.001 (SE = 0.002). This suggests that the earlier trade result was not especially robust once population is taken into account. One plausible reason is that trade openness overlaps with other structural features in the model, especially urbanisation and sectoral composition, so its partial relationship with income becomes less stable in the fuller specification. Finally, log population enters negatively at -0.122 (SE = 0.029, p < 0.001), suggesting that, conditional on the other variables in the model, larger countries in this sample tend to have somewhat lower GDP per capita.
+
+```{python}
+#| label: fig10-attenuation
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.5),
+                         gridspec_kw={"wspace": 0.38})
+fig.suptitle("Figure 10. Geographic Coefficient Attenuation Across Nested Models",
+             fontsize=11, y=1.02)
+
+# Left panel: trace how the dist_equator coefficient shrinks from M1 through M4
+models_A = [("M1", m1), ("M2", m2), ("M3", m3), ("M4", m4)]
+ax = axes[0]
+for i, (nm, m) in enumerate(models_A):
+    c        = m.params["dist_equator"]
+    lo, hi   = m.conf_int().loc["dist_equator"]
+    ax.errorbar(i, c, yerr=[[c - lo], [hi - c]],
+                fmt="o", color="#2E6DA4", ms=9, capsize=6,
+                capthick=1.5, elinewidth=1.8, zorder=3)
+    star = sig_stars(m.pvalues["dist_equator"])
+    if star:
+        ax.text(i, hi + 0.003, star, ha="center", va="bottom", fontsize=10)
+ax.axhline(0, color="black", lw=0.8, ls="--", alpha=0.6)
+ax.set_xticks(range(4))
+ax.set_xticklabels([nm for nm, _ in models_A])
+ax.set_ylabel("Coefficient on log(GDP per capita)")
+ax.set_title("Distance from Equator")
+ax.set_xlabel("Model")
+
+# Right panel: do the same for the landlocked penalty across M2 through M4
+models_B = [("M2", m2), ("M3", m3), ("M4", m4)]
+ax = axes[1]
+for i, (nm, m) in enumerate(models_B):
+    c        = m.params["landlocked"]
+    lo, hi   = m.conf_int().loc["landlocked"]
+    ax.errorbar(i, c, yerr=[[c - lo], [hi - c]],
+                fmt="s", color="#D45F3B", ms=9, capsize=6,
+                capthick=1.5, elinewidth=1.8, zorder=3)
+    star = sig_stars(m.pvalues["landlocked"])
+    if star:
+        offset = -0.04 if c < 0 else 0.003
+        va     = "top"  if c < 0 else "bottom"
+        ref    = lo     if c < 0 else hi
+        ax.text(i, ref + offset, star, ha="center", va=va, fontsize=10)
+ax.axhline(0, color="black", lw=0.8, ls="--", alpha=0.6)
+ax.set_xticks(range(3))
+ax.set_xticklabels([nm for nm, _ in models_B])
+ax.set_ylabel("Coefficient on log(GDP per capita)")
+ax.set_title("Landlocked")
+ax.set_xlabel("Model")
+
+plt.show()
+```
+
+*Figure 10 shows how the two geography coefficients change as more variables are added to the model. In the left panel, the distance-from-equator coefficient is around 0.045–0.05 in M1 and M2. After the structure variables are added in M3, it drops to around 0.02 and stays at roughly the same level in M4. The coefficient is clearly smaller but still positive and statistically significant. The right panel shows a similar pattern for the landlocked variable. In M2 the coefficient is around −1.1, indicating much lower income for landlocked countries. Once the structure variables enter in M3, the coefficient becomes much smaller, around −0.4, and remains similar in M4.(or a bit higher)*
+
+```{python}
+#| label: fig11-coef-m4
+
+preds_plot = [p for p in ["dist_equator", "landlocked", "agriculture_share",
+                           "trade_share", "urbanization", "log_population"]
+              if p in m4.params.index]
+
+coefs  = np.array([m4.params[p] for p in preds_plot])
+ci_lo  = np.array([m4.conf_int().loc[p, 0] for p in preds_plot])
+ci_hi  = np.array([m4.conf_int().loc[p, 1] for p in preds_plot])
+pvals  = np.array([m4.pvalues[p] for p in preds_plot])
+xerr   = np.array([coefs - ci_lo, ci_hi - coefs])
+labels = [PRED_LABELS.get(p, p) for p in preds_plot]
+colors = ["#27AE60" if c > 0 else "#C0392B" for c in coefs]
+
+fig, ax = plt.subplots(figsize=(8, 4.5))
+ax.barh(range(len(preds_plot)), coefs, color=colors, alpha=0.82,
+        xerr=xerr, error_kw={"elinewidth": 1.5, "capsize": 5, "ecolor": "#555"})
+ax.axvline(0, color="black", lw=0.9, ls="--")
+ax.set_yticks(range(len(preds_plot)))
+ax.set_yticklabels(labels, fontsize=9)
+ax.set_xlabel("Coefficient (log GDP per capita, ±95% CI)")
+ax.set_title(
+    f"Figure 11. M4 Full Coefficient Plot — HC3 SEs, n = {int(m4.nobs)}, "
+    f"R\u00b2 = {m4_r2}")
+for i, pv in enumerate(pvals):
+    star = sig_stars(pv)
+    if star:
+        ax.text(ci_hi[i] + 0.01, i, f" {star}", va="center", fontsize=9)
+plt.tight_layout()
+plt.show()
+```
+
+*Figure 11. Coefficient plot for the full model (M4), with 95% confidence intervals based on heteroskedasticity-robust standard errors. Green bars indicate positive partial associations with log GDP per capita; red bars indicate negative ones.*
+
+---
+
+## Interactive Map Extension
+
+The regression and scatter plots in the previous sections communicate the
+geography-structure-income relationship statistically. This section adds an
+interactive map that communicates the same idea spatially. Rather than colouring
+countries by GDP, the map groups each country by its **economic structure
+profile** — Agrarian, Transitional, or Urban / Service-Oriented — using a
+transparent, tercile-based rule applied to agriculture share and urbanisation.
+The goal is to make it easy to see whether countries with similar structural
+profiles cluster geographically, which would support the paper's core argument.
+
+Marker size is proportional to GDP per capita. Clicking any marker opens a popup
+with the full variable profile for that country.
+
+```{python}
+#| label: folium-map
+
+import folium
+
+STRUCTURE_COLORS = {
+    "Agrarian":                 "#D45F3B",
+    "Transitional":             "#F5A623",
+    "Urban / Service-Oriented": "#2E6DA4",
+}
+
+
+def classify_structure_type(agri_tercile, urban_tercile):
+    """
+    Transparent rule-based classification:
+      Agrarian               — agriculture_share in top tercile
+      Urban / Service-Oriented — agriculture_share in bottom tercile
+                                 AND urbanisation in top tercile
+      Transitional           — everything else
+    """
+    if agri_tercile == "High":
+        return "Agrarian"
+    elif agri_tercile == "Low" and urban_tercile == "High":
+        return "Urban / Service-Oriented"
+    else:
+        return "Transitional"
+
+
+def format_popup(row):
+    """Clean HTML popup for a country marker."""
+    landlocked_str = "Yes" if row["landlocked"] == 1 else "No"
+    subregion_str  = row["subregion"] if row["subregion"] else row["region"]
+
+    if row["structure_type"] == "Agrarian":
+        interp = "This economy is relatively agriculture-dependent."
+    elif row["structure_type"] == "Urban / Service-Oriented":
+        interp = "This economy is relatively urbanised with a small agricultural sector."
+    else:
+        interp = "This economy sits in the middle of the structural distribution."
+
+    html = f"""
+    <div style="font-family: Arial, sans-serif; font-size: 12px; width: 230px;">
+      <b style="font-size: 13px;">{row['country']}</b><br>
+      <span style="color:#666;">{row['region']} · {subregion_str}</span>
+      <hr style="margin:4px 0;">
+      <table style="width:100%; border-collapse:collapse;">
+        <tr><td><b>Structure type</b></td>
+            <td style="color:{STRUCTURE_COLORS[row['structure_type']]};">
+                <b>{row['structure_type']}</b></td></tr>
+        <tr><td><b>GDP per capita</b></td>
+            <td>USD {row['gdp_per_capita']:,.0f}</td></tr>
+        <tr><td><b>Agriculture share</b></td>
+            <td>{row['agriculture_share']:.1f}%</td></tr>
+        <tr><td><b>Urbanisation</b></td>
+            <td>{row['urbanization']:.1f}%</td></tr>
+        <tr><td><b>Trade share</b></td>
+            <td>{row['trade_share']:.1f}%</td></tr>
+        <tr><td><b>Dist. from equator</b></td>
+            <td>{row['dist_equator']:.1f}°</td></tr>
+        <tr><td><b>Landlocked</b></td>
+            <td>{landlocked_str}</td></tr>
+      </table>
+      <hr style="margin:4px 0;">
+      <i style="color:#555; font-size:11px;">{interp}</i>
+    </div>
+    """
+    return html
+
+
+def add_legend(fmap):
+    """Inject a fixed-position HTML legend into the map."""
+    legend_html = """
+    <div style="position:fixed; bottom:30px; left:30px; z-index:1000;
+                background:white; padding:12px 16px; border-radius:6px;
+                border:1px solid #ccc; font-family:Arial,sans-serif;
+                font-size:12px; box-shadow:2px 2px 6px rgba(0,0,0,0.15);">
+      <b style="font-size:13px;">Economic Structure Type</b><br><br>
+      <span style="background:#D45F3B; border-radius:50%;
+                   display:inline-block; width:11px; height:11px;
+                   margin-right:6px;"></span>Agrarian<br>
+      <span style="background:#F5A623; border-radius:50%;
+                   display:inline-block; width:11px; height:11px;
+                   margin-right:6px;"></span>Transitional<br>
+      <span style="background:#2E6DA4; border-radius:50%;
+                   display:inline-block; width:11px; height:11px;
+                   margin-right:6px;"></span>Urban / Service-Oriented<br>
+      <br>
+      <span style="color:#888; font-size:11px;">Marker size ∝ GDP per capita</span>
+    </div>
+    """
+    fmap.get_root().html.add_child(folium.Element(legend_html))
+
+
+# Prepare the map dataset
+map_cols = ["country", "iso3", "latitude", "longitude", "dist_equator",
+            "landlocked", "region", "subregion", "agriculture_share",
+            "urbanization", "trade_share", "gdp_per_capita", "log_gdp"]
+df_map = df_an[[c for c in map_cols if c in df_an.columns]].dropna(
+    subset=["latitude", "longitude", "agriculture_share",
+            "urbanization", "gdp_per_capita"]).copy()
+
+if "subregion" not in df_map.columns:
+    df_map["subregion"] = ""
+
+# Classify structure type using terciles
+df_map["agri_tercile"]  = pd.qcut(df_map["agriculture_share"], q=3,
+                                   labels=["Low", "Medium", "High"])
+df_map["urban_tercile"] = pd.qcut(df_map["urbanization"],      q=3,
+                                   labels=["Low", "Medium", "High"])
+df_map["structure_type"] = df_map.apply(
+    lambda r: classify_structure_type(r["agri_tercile"], r["urban_tercile"]),
+    axis=1)
+
+# Scale marker radius proportional to log(GDP per capita)
+log_min = df_map["log_gdp"].min()
+log_max = df_map["log_gdp"].max()
+df_map["radius"] = 5 + (df_map["log_gdp"] - log_min) / (log_max - log_min) * 10
+
+# Build map
+m = folium.Map(location=[20, 10], zoom_start=2,
+               tiles="CartoDB positron", prefer_canvas=True)
+
+for _, row in df_map.iterrows():
+    folium.CircleMarker(
+        location=[row["latitude"], row["longitude"]],
+        radius=row["radius"],
+        color=STRUCTURE_COLORS[row["structure_type"]],
+        fill=True,
+        fill_color=STRUCTURE_COLORS[row["structure_type"]],
+        fill_opacity=0.75,
+        weight=0.8,
+        popup=folium.Popup(format_popup(row), max_width=270),
+        tooltip=f"{row['country']} — {row['structure_type']}",
+    ).add_to(m)
+
+add_legend(m)
+
+# Print distribution summary
+dist = df_map["structure_type"].value_counts()
+print("Structure type distribution:")
+for stype, n in dist.items():
+    print(f"  {stype:<28}: {n} countries")
+
+m
+```
+
+*Figure 12. Interactive world map of economic structure profiles (2019).
+Each circle represents one country, coloured by its structure type — Agrarian
+(red), Transitional (amber), or Urban / Service-Oriented (blue) — classified
+using a tercile-based rule on agriculture share and urbanisation. Marker size is
+proportional to GDP per capita. Click any marker for the full country profile.*
+
+Countries closer to the equator are predominantly red and amber, while blue
+markers concentrate in Europe, North America, and parts of East Asia. The
+pattern is not deterministic — some low-latitude countries are in the blue
+category and some high-latitude countries are amber — but the broad spatial
+clustering is consistent with the regression finding that geography is associated
+with economic structure, even if it does not fully determine it.
+
+---
+
+## Summary
+
+### Main Findings
+
+This project does not try to settle the long-standing debate about whether
+geography or institutions matter more for development. Instead, it looks at a
+narrower question: in a 2019 cross-section of `{python} n_an` countries, how
+geography relates to economic structure, and how structure in turn relates to
+income.
+
+A few patterns appear quite consistently in the data.
+
+**Geography and economic structure are related.** Countries farther from the
+equator generally have smaller agricultural sectors and higher levels of
+urbanisation — the Pearson correlation between distance from the equator and
+agriculture share is −0.39, and between distance and urbanisation is positive
+and of similar magnitude. Landlocked countries also tend to be less integrated
+into global trade, a gap confirmed by the Welch t-test in Table 5. These
+patterns show up consistently across the scatter plots, correlation tests, and
+group comparisons.
+
+**Economic structure is strongly associated with income differences.** Countries
+with large agricultural sectors tend to have lower income levels, while
+countries with higher urbanisation tend to have higher income. Trade openness is
+also positively related to income, although that relationship is somewhat weaker
+once the other structure variables are included. In the full model (M4), the
+three structure variables together account for a meaningful share of the
+cross-country income variation, with the R² rising from
+`{python} m1_r2` in the baseline to `{python} m4_r2` in M4.
+
+**The latitude-income relationship becomes noticeably smaller once economic
+structure is added.** The distance-from-equator coefficient falls by roughly
+`{python} dist_attn_pct`% between M1 and M4. This is the core pattern the
+project was designed to examine: part of what looks like a geography effect on
+income is actually reflecting underlying differences in economic structure.
+Geography still retains a statistically significant association with income in
+the full model, but its role is substantially reduced once structural differences
+between economies are taken into account.
+
+### Limitations
+
+Like most cross-country analyses, this study has several limitations worth
+being explicit about.
+
+| Limitation | Description |
+|------------|-------------|
+| Cross-sectional design | Single year (2019); cannot capture long-run dynamics or establish temporal ordering |
+| Omitted variable bias | Institutions, education, colonial history, and political stability are all absent from the models |
+| No causal identification | All results are descriptive associations; regression coefficients should not be interpreted causally |
+| Simplified geography proxies | `dist_equator` and `landlocked` are rough summaries of complex geographic conditions |
+| Ecological fallacy | Country-level patterns may not hold at sub-national or individual levels |
+| Sample restriction | Countries with missing data on any core variable were dropped, which may introduce mild selection bias |
+
+### Final Project Extension Plan
+
+This project builds a clean, reproducible dataset and a simple empirical
+baseline. The final project could extend the analysis in a few natural
+directions, all of which work directly from the dataset already prepared here.
+
+**Option 1 — Supervised classification.** Frame the problem as a binary
+classification task: can a model correctly predict whether a country falls in
+the high-income tercile using geography and structure variables as features?
+Logistic regression and Random Forest would be natural models to compare on
+ROC-AUC and F1. SHAP-based feature importance could shed further light on which
+variables drive the predictions, connecting back to the regression results here.
+
+**Option 2 — Unsupervised clustering.** Group countries by their economic
+structure profiles using k-means or hierarchical clustering, then examine how
+the resulting clusters map onto geographic regions and income levels. This would
+produce a data-driven typology of structural development patterns without
+imposing any income label in the clustering step — a useful complement to the
+regression approach used here.
+
+**Option 3 — Interactive dashboard.** Build a Plotly Dash or Streamlit
+application that lets users explore the geography-structure-income relationships
+interactively, with a choropleth world map, adjustable scatter plots, and a live
+regression panel that updates as the user selects different variable
+combinations. This would make the empirical patterns accessible to a broader
+audience and demonstrate the dataset's versatility.
+
+---

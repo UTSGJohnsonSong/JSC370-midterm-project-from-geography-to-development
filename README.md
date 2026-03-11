@@ -1,22 +1,57 @@
 # From Geography to Development
 
-This repository contains my JSC370 2026 midterm project.
+JSC370 Midterm Project (Winter 2026)  
+Zekun Song
 
-## Project topic
-This project examines how geography is associated with economic structure across countries, and how economic structure is in turn related to national income.
+A cross-country observational analysis examining how geographic characteristics relate to economic structure, and how economic structure in turn relates to national income (2019 data).
 
-## Main files
-- `midterm_project.qmd`: main Quarto source file
-- `midterm_project.html`: rendered report
-- `data/`: raw and processed data files
-- `outputs/`: figures and tables generated in the analysis
+---
 
-## Data sources
-- REST Countries API
-- World Bank API
+## Research Question
+
+> To what extent is geography associated with economic development across countries, and does this relationship partly operate through differences in economic structure?
+
+**Subquestions:**
+
+1. Are geographic characteristics associated with economic structure across countries?
+2. Are economic structure variables associated with national income levels?
+3. Does the association between geography and income weaken after controlling for economic structure?
+
+---
+
+## Report Sections
+
+| Section | Description |
+|---|---|
+| **Introduction** | Background, motivation, conceptual framework, and research questions |
+| **Methods** | Data acquisition (APIs), cleaning, wrangling, and analytical tools |
+| **Preliminary Results** | Summary statistics, publication-quality figures, regression tables |
+| **Summary** | Key findings and plan for final project (ML modeling, interactive visualizations, website) |
+
+---
+
+## Files
+
+| File | Description |
+|---|---|
+| `midterm_project.qmd` | Main Quarto source file |
+| `midterm_project.html` | Rendered HTML report |
+
+---
+
+## Data Sources
+
+| Source | Access Method | Variables |
+|---|---|---|
+| [REST Countries API](https://restcountries.com/) | HTTP API | Region, landlocked status, area, borders |
+| [World Bank API](https://datahelpdesk.worldbank.org/knowledgebase/articles/889392) | `wbgapi` Python package | GDP per capita, agriculture share, trade share, urbanisation |
+
+---
 
 ## Reproducibility
-The report can be reproduced by running the main Quarto file after installing the required Python packages.
 
-## Author
-Zekun Song
+Install the required Python packages, then render the Quarto file:
+
+```bash
+pip install requests pandas numpy matplotlib seaborn scipy statsmodels wbgapi
+quarto render notebook.qmd
