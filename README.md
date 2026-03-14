@@ -1,9 +1,9 @@
 # From Geography to Development
 
-JSC370 Midterm Project (Winter 2026)  
+JSC370 Midterm Project
 Zekun Song
 
-A cross-country observational analysis examining how geographic characteristics relate to economic structure, and how economic structure in turn relates to national income (2019 data).
+A cross-country observational analysis examining how geographic characteristics relate to economic structure, and how economic structure in turn relates to national income (2019 year data).
 
 ---
 
