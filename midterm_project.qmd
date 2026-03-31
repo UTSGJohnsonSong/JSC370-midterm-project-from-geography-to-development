@@ -13,6 +13,7 @@ format:
     df-print: paged
     theme: flatly
     highlight-style: github
+    embed-resources: true
 execute:
   warning: false
   message: false
